@@ -1,38 +1,7 @@
-# Stage 1: Install dependencies
-FROM node:20-slim AS deps
-
-# Define app path
-ARG APP_PATH=/opt/outline
-WORKDIR $APP_PATH
-
-# Copy dependency files
-COPY ./package.json ./yarn.lock ./
-COPY ./patches ./patches
-
-# Install dependencies
-RUN NODE_OPTIONS="--max-old-space-size=8192" yarn install --frozen-lockfile --network-timeout 1000000 && \
-    yarn cache clean
-
-# Stage 2: Build the application
-FROM node:20-slim AS builder
-
-ARG APP_PATH=/opt/outline
-WORKDIR $APP_PATH
-
-# Copy dependencies and source code
-COPY --from=deps $APP_PATH/node_modules ./node_modules
-COPY . .
-
-# Set CDN URL for build if needed
-ARG CDN_URL
-
-# Build the application
-RUN yarn build
-
-# Stage 3: Production-ready image
+# Base image for production
 FROM node:20-slim AS production
 
-# Define app path
+# Define app path inside the container
 ARG APP_PATH=/opt/outline
 WORKDIR $APP_PATH
 
@@ -40,13 +9,11 @@ WORKDIR $APP_PATH
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Copy production dependencies and build artifacts
-COPY --from=deps $APP_PATH/node_modules ./node_modules
-COPY --from=builder $APP_PATH/dist ./dist
-COPY . .
+# Copy the pre-built application from your local machine
+COPY ./build $APP_PATH
 
 # Expose the application port
 EXPOSE 3000
 
 # Start the application
-CMD ["yarn", "start"]
+CMD ["node", "./build/server/index.js"]
