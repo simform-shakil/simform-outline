@@ -1,21 +1,52 @@
-ARG APP_PATH=/opt/outline
+# Stage 1: Install dependencies
 FROM node:20-slim AS deps
 
-ARG APP_PATH
+# Define app path
+ARG APP_PATH=/opt/outline
 WORKDIR $APP_PATH
+
+# Copy dependency files
 COPY ./package.json ./yarn.lock ./
 COPY ./patches ./patches
 
-RUN yarn install --no-optional --frozen-lockfile --network-timeout 1000000 && \
-  yarn cache clean
+# Install dependencies
+RUN NODE_OPTIONS="--max-old-space-size=8192" yarn install --frozen-lockfile --network-timeout 1000000 && \
+    yarn cache clean
 
+# Stage 2: Build the application
+FROM node:20-slim AS builder
+
+ARG APP_PATH=/opt/outline
+WORKDIR $APP_PATH
+
+# Copy dependencies and source code
+COPY --from=deps $APP_PATH/node_modules ./node_modules
 COPY . .
+
+# Set CDN URL for build if needed
 ARG CDN_URL
+
+# Build the application
 RUN yarn build
 
-RUN rm -rf node_modules
+# Stage 3: Production-ready image
+FROM node:20-slim AS production
 
-RUN yarn install --production=true --frozen-lockfile --network-timeout 1000000 && \
-  yarn cache clean
+# Define app path
+ARG APP_PATH=/opt/outline
+WORKDIR $APP_PATH
 
+# Set production environment variables
+ENV NODE_ENV=production
 ENV PORT=3000
+
+# Copy production dependencies and build artifacts
+COPY --from=deps $APP_PATH/node_modules ./node_modules
+COPY --from=builder $APP_PATH/dist ./dist
+COPY . .
+
+# Expose the application port
+EXPOSE 3000
+
+# Start the application
+CMD ["yarn", "start"]
