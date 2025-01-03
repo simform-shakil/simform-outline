@@ -1,7 +1,37 @@
-# Base image for production
+# Stage 1: Install dependencies
+FROM node:20-slim AS deps
+
+# Define app path
+ARG APP_PATH=/opt/outline
+WORKDIR $APP_PATH
+
+# Copy dependency files
+COPY ./package.json ./yarn.lock ./
+COPY ./patches ./patches
+
+# Install dependencies, skipping unnecessary scripts
+RUN npm install --legacy-peer-deps --omit=dev --ignore-scripts && npm run clean
+
+# Stage 2: Build the application
+FROM node:20-slim AS builder
+
+ARG APP_PATH=/opt/outline
+WORKDIR $APP_PATH
+
+# Copy dependencies and source code
+COPY --from=deps $APP_PATH/node_modules ./node_modules
+COPY . .
+
+# Set CDN URL for build if needed
+ARG CDN_URL
+
+# Build the application
+RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
+
+# Stage 3: Production-ready image
 FROM node:20-slim AS production
 
-# Define app path inside the container
+# Define app path
 ARG APP_PATH=/opt/outline
 WORKDIR $APP_PATH
 
@@ -9,11 +39,13 @@ WORKDIR $APP_PATH
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Copy the pre-built application from your local machine
-COPY ./build $APP_PATH
+# Copy production dependencies and build artifacts
+COPY --from=deps $APP_PATH/node_modules ./node_modules
+COPY --from=builder $APP_PATH/build ./build
+COPY . .
 
 # Expose the application port
 EXPOSE 3000
 
 # Start the application
-CMD ["node", "./build/server/index.js"]
+CMD ["npm", "start"]
